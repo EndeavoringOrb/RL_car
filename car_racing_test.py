@@ -1,20 +1,20 @@
 import pygame
 import math
 import numpy as np
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, DQN
 
 # Initialize Pygame
 pygame.init()
 
 # Load the saved model from the file path
-model_path = "ppo_model6/94208.zip"  # Replace with the file path to your saved model
-model = PPO.load(model_path)
+model_path = "dqn_model0/38912.zip"  # Replace with the file path to your saved model
+img_num = 4
+model = DQN.load(model_path)
 
 # Set physics things
 friction_constant = 0.987
 
 # Load the background image + make game window
-img_num = 2 #int(input("Enter the image number: "))
 my_image = pygame.image.load(f'image{img_num}.png')
 og_size = my_image.get_size()
 game_window = pygame.display.set_mode(og_size)
@@ -29,7 +29,7 @@ BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 
 # Set the car dimensions
-car_shape = [15,30] #x,y
+car_shape = [6,15] #x,y
 
 # Set the speed of the car
 CAR_SPEED = 0.05
@@ -45,13 +45,7 @@ SCORE_FONT = pygame.font.SysFont('Arial', 30)
 pygame.display.set_caption('Car Racing Game')
 
 # Load config
-config = np.load(f"config{img_num}.npy")
-
-# Load the car image
-car_image = pygame.image.load('car.png').convert_alpha()
-car_image = pygame.transform.scale(car_image, (car_shape[0], car_shape[1]))
-car_image = pygame.transform.rotate(car_image, 90)
-car_img_size = car_image.get_size()
+config = np.load(f"config{img_num}.npy", allow_pickle=True)
 
 # Load the background values
 np_img = np.load(f"image{img_num}.npy")
@@ -153,6 +147,45 @@ def translate_points(points, move_amount_x, move_amount_y):
         translated_points.append([point[0]+move_amount_x,point[1]+move_amount_y])
     return np.array(translated_points)
 
+def are_lines_intersecting(line1, line2):
+    """
+    Check if two lines are intersecting, given their endpoints.
+    
+    Parameters:
+    line1 (tuple): Endpoints of the first line in the format (x1, y1, x2, y2).
+    line2 (tuple): Endpoints of the second line in the format (x1, y1, x2, y2).
+    
+    Returns:
+    bool: True if the two lines are intersecting, False otherwise.
+    """
+    x1, y1, x2, y2 = line1
+    x3, y3, x4, y4 = line2
+    
+    # Calculate the slopes and y-intercepts of the two lines
+    slope1 = (y2 - y1) / (x2 - x1) if x2 - x1 != 0 else float('inf')
+    slope2 = (y4 - y3) / (x4 - x3) if x4 - x3 != 0 else float('inf')
+    
+    yint1 = y1 - slope1 * x1 if x2 - x1 != 0 else x1
+    yint2 = y3 - slope2 * x3 if x4 - x3 != 0 else x3
+    
+    # If the slopes are equal, the lines are either parallel or the same line
+    if slope1 == slope2:
+        return False
+    
+    # Calculate the x-coordinate of the intersection point
+    if slope1 == float('inf'):
+        x_int = x1
+    elif slope2 == float('inf'):
+        x_int = x3
+    else:
+        x_int = (yint2 - yint1) / (slope1 - slope2)
+    
+    # Check if the intersection point is within the range of the two lines
+    if (x1 <= x_int <= x2 or x2 <= x_int <= x1) and (x3 <= x_int <= x4 or x4 <= x_int <= x3) and (y1 <= yint2 <= y2 or y3 <= yint1 <= y4):
+        return True
+    else:
+        return False
+
 # Set the clock
 clock = pygame.time.Clock()
 
@@ -161,9 +194,14 @@ game_running = True
 game_over = False
 velocity = [0,0]
 angle = 180
+gates_original = config[1:]
+gates = gates_original
 distances, points = find_distances(car_points[0][0],car_points[0][1],car_points[1][0],car_points[1][1],car_points[2][0],car_points[2][1],car_points[3][0],car_points[3][1],angle,np_img)
+gate_remove_list = []
 while game_running:
     if game_over == True:
+        gates = gates_original
+        score = 0
         angle = 180
         velocity = [0,0]
         game_over = False
@@ -173,27 +211,52 @@ while game_running:
     velocity[0],velocity[1] = velocity[0]*friction_constant,velocity[1]*friction_constant
 
     # Move the car
-    action, _ = model.predict(distances)
-    if action[0][0] > action[0][1]:
-        angle += TURN_SPEED
-        car_points = rotate_points(car_points,-TURN_SPEED)
-    if action[1][0] > action[1][1]:
-        angle -= TURN_SPEED
-        car_points = rotate_points(car_points,TURN_SPEED)
-    if action[2][0] > action[2][1]:
+    # action : w,a,s,d,wa,wd,sa,sd
+    action, _ = model.predict(np.array([*distances,velocity[0],velocity[1],math.sin(deg_to_rad(angle))]))
+    if action == 0: #forward
+        print("forward         ",end="\r")
         velocity[0] += CAR_SPEED * math.sin((angle/180)*math.pi)
         velocity[1] += CAR_SPEED * math.cos((angle/180)*math.pi)
-        car_points
-    if action[3][0] > action[3][1]:
+    if action == 1: #left
+        print("left            ",end="\r")
+        angle += TURN_SPEED
+        car_points = rotate_points(car_points,-TURN_SPEED)
+    if action == 2: #back
+        print("back            ",end="\r")
         velocity[0] -= CAR_SPEED * math.sin((angle/180)*math.pi)
         velocity[1] -= CAR_SPEED * math.cos((angle/180)*math.pi)
+    if action == 3: #right
+        print("right           ",end="\r")
+        angle -= TURN_SPEED
+        car_points = rotate_points(car_points,TURN_SPEED)
+    if action == 4: #forward left
+        print("forward left    ",end="\r")
+        velocity[0] += CAR_SPEED * math.sin((angle/180)*math.pi)
+        velocity[1] += CAR_SPEED * math.cos((angle/180)*math.pi)
+        angle += TURN_SPEED
+        car_points = rotate_points(car_points,-TURN_SPEED)
+    if action == 5: #forward right
+        print("forward right    ",end="\r")
+        velocity[0] += CAR_SPEED * math.sin((angle/180)*math.pi)
+        velocity[1] += CAR_SPEED * math.cos((angle/180)*math.pi)
+        angle -= TURN_SPEED
+        car_points = rotate_points(car_points,TURN_SPEED)
+    if action == 6: #backward left
+        print("backward left    ",end="\r")
+        velocity[0] -= CAR_SPEED * math.sin((angle/180)*math.pi)
+        velocity[1] -= CAR_SPEED * math.cos((angle/180)*math.pi)
+        angle += TURN_SPEED
+        car_points = rotate_points(car_points,-TURN_SPEED)
+    if action == 7: #backward right
+        print("backward right    ",end="\r")
+        velocity[0] -= CAR_SPEED * math.sin((angle/180)*math.pi)
+        velocity[1] -= CAR_SPEED * math.cos((angle/180)*math.pi)
+        angle -= TURN_SPEED
+        car_points = rotate_points(car_points,TURN_SPEED)
 
     car_x += velocity[0]
     car_y += velocity[1]
     car_points = translate_points(car_points,velocity[0],velocity[1])
-
-    car_image2 = pygame.transform.rotate(car_image, angle)
-    size = car_image2.get_size()
 
     while np.array([i < 0 for i in car_points[:,0]]).any():
         car_points = translate_points(car_points,1,0)
@@ -207,6 +270,22 @@ while game_running:
     while np.array([i >= WINDOW_HEIGHT for i in car_points[:,1]]).any():
         car_points = translate_points(car_points,0,-1)
         velocity[1] = 0
+
+    if len(gates) < 1:
+        gates = gates_original
+        gate_remove_list = []
+
+    # 0,1 - 1,3 - 3,2 - 2,1
+    line1 = (car_points[0][0],car_points[0][1],car_points[1][0],car_points[1][1])
+    line2 = (car_points[1][0],car_points[1][1],car_points[3][0],car_points[3][1])
+    line3 = (car_points[3][0],car_points[3][1],car_points[2][0],car_points[2][1])
+    line4 = (car_points[2][0],car_points[2][1],car_points[0][0],car_points[0][1])
+    for line in [line1,line2,line3,line4]:
+        for i, gate in enumerate(gates):
+            if are_lines_intersecting(line,(gate[0][0],gate[0][1],gate[-1][0],gate[-1][1])) and i not in gate_remove_list:
+                score += 1
+                gate_remove_list.append(i)
+    #gates = np.delete(gates,gate_remove_list,axis=0)
 
     if np_img[int(car_points[0,1]),int(car_points[0,0])] == 0 or np_img[int(car_points[1,1]),int(car_points[1,0])] == 0 or np_img[int(car_points[2,1]),int(car_points[2,0])] == 0 or np_img[int(car_points[3,1]),int(car_points[3,0])] == 0:
         game_over = True
@@ -224,23 +303,28 @@ while game_running:
     distances, points = find_distances(car_points[0,0],car_points[0,1],car_points[1,0],car_points[1,1],car_points[2,0],car_points[2,1],car_points[3,0],car_points[3,1],angle,np_img)
     for point in points:
         pygame.draw.circle(game_window, (255,0,0), (point), 5)
-
-    # Draw car bounding
-    for point in car_points[:2]:
-        pygame.draw.circle(game_window, (0,255,0), (point), 5)
-    for point in car_points[2:]:
-        pygame.draw.circle(game_window, (0,0,255), (point), 5)
     
     # Draw the score
-    #score_text = SCORE_FONT.render(f'Score: {score//60}', True, WHITE)
-    #game_window.blit(score_text, (10, 10))
+    score_text = SCORE_FONT.render(f'Score: {score}', True, WHITE)
+    game_window.blit(score_text, (10, 10))
 
-    # Draw end point
-    for point in config[1:]:
-        pygame.draw.circle(game_window, (255,0,255), point, 5)
+    # Draw lines
+    for i, line in enumerate(config[1:]):
+        if i in gate_remove_list:
+            color = (255,0,0)
+        else:
+            color = (0,255,0)
+        for point in line:
+            pygame.draw.circle(game_window, color, point, 5)
+
+    # Draw car bounding
+    pygame.draw.circle(game_window, (0,255,0), (car_points[0][0],car_points[0][1]), 5)
+    pygame.draw.circle(game_window, (255,0,0), (car_points[1][0],car_points[1][1]), 5)
+    pygame.draw.circle(game_window, (0,0,0), (car_points[2][0],car_points[2][1]), 5)
+    pygame.draw.circle(game_window, (0,0,255), (car_points[3][0],car_points[3][1]), 5)
 
     # Update the score
-    score += 1
+    #score += 1
 
     # Update the display
     pygame.display.update()

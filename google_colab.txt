@@ -1,0 +1,14 @@
+!pip install stable-baselines3
+!pip install pygame
+!pip install numpy
+!pip install gym
+
+
+from stable_baselines3 import PPO
+import pygame
+import numpy as np
+import gym
+from gym import spaces
+
+#then upload custom_env.py to the files
+#then paste SB3train.py into a cell and run it

@@ -10,7 +10,7 @@ pygame.init()
 friction_constant = 0.987
 
 # Load the background image + make game window
-img_num = 2 #int(input("Enter the image number: "))
+img_num = 4 #int(input("Enter the image number: "))
 my_image = pygame.image.load(f'image{img_num}.png')
 og_size = my_image.get_size()
 game_window = pygame.display.set_mode(og_size)
@@ -41,13 +41,7 @@ SCORE_FONT = pygame.font.SysFont('Arial', 30)
 pygame.display.set_caption('Car Racing Game')
 
 # Load config
-config = np.load(f"config{img_num}.npy")
-
-# Load the car image
-car_image = pygame.image.load('car.png').convert_alpha()
-car_image = pygame.transform.scale(car_image, (car_shape[0], car_shape[1]))
-car_image = pygame.transform.rotate(car_image, 90)
-car_img_size = car_image.get_size()
+config = np.load(f"config{img_num}.npy", allow_pickle=True)
 
 # Load the background values
 np_img = np.load(f"image{img_num}.npy")
@@ -110,6 +104,45 @@ def bresenham_line(x0, y0, x1, y1):
             y0 += sy
     return line
 
+def are_lines_intersecting(line1, line2):
+    """
+    Check if two lines are intersecting, given their endpoints.
+    
+    Parameters:
+    line1 (tuple): Endpoints of the first line in the format (x1, y1, x2, y2).
+    line2 (tuple): Endpoints of the second line in the format (x1, y1, x2, y2).
+    
+    Returns:
+    bool: True if the two lines are intersecting, False otherwise.
+    """
+    x1, y1, x2, y2 = line1
+    x3, y3, x4, y4 = line2
+    
+    # Calculate the slopes and y-intercepts of the two lines
+    slope1 = (y2 - y1) / (x2 - x1) if x2 - x1 != 0 else float('inf')
+    slope2 = (y4 - y3) / (x4 - x3) if x4 - x3 != 0 else float('inf')
+    
+    yint1 = y1 - slope1 * x1 if x2 - x1 != 0 else x1
+    yint2 = y3 - slope2 * x3 if x4 - x3 != 0 else x3
+    
+    # If the slopes are equal, the lines are either parallel or the same line
+    if slope1 == slope2:
+        return False
+    
+    # Calculate the x-coordinate of the intersection point
+    if slope1 == float('inf'):
+        x_int = x1
+    elif slope2 == float('inf'):
+        x_int = x3
+    else:
+        x_int = (yint2 - yint1) / (slope1 - slope2)
+    
+    # Check if the intersection point is within the range of the two lines
+    if (x1 <= x_int <= x2 or x2 <= x_int <= x1) and (x3 <= x_int <= x4 or x4 <= x_int <= x3) and (y1 <= yint2 <= y2 or y3 <= yint1 <= y4):
+        return True
+    else:
+        return False
+
 def rotate_points(points, angle_degrees):
     # Find the center point of the four points
     center_x = sum([p[0] for p in points]) / len(points)
@@ -157,6 +190,8 @@ game_running = True
 velocity = [0,0]
 angle = 180
 step_count = 0
+gates_original = config[1:]
+gates = gates_original
 while game_running:
     print(step_count,end="\r")
     step_count += 1
@@ -187,9 +222,6 @@ while game_running:
     car_y += velocity[1]
     car_points = translate_points(car_points,velocity[0],velocity[1])
 
-    car_image2 = pygame.transform.rotate(car_image, angle)
-    size = car_image2.get_size()
-
     while np.array([i < 0 for i in car_points[:,0]]).any():
         car_points = translate_points(car_points,1,0)
         velocity[0] = 0
@@ -207,6 +239,22 @@ while game_running:
         #print("over")
         pass
 
+    if len(gates) < 1:
+        gates = gates_original
+
+    gate_remove_list = []
+    line1 = (car_points[0][0],car_points[0][1],car_points[1][0],car_points[1][1])
+    line2 = (car_points[1][0],car_points[1][1],car_points[2][0],car_points[2][1])
+    line3 = (car_points[2][0],car_points[2][1],car_points[3][0],car_points[2][1])
+    line4 = (car_points[3][0],car_points[3][1],car_points[0][0],car_points[0][1])
+    for line in [line1,line2,line3,line4]:
+        for i, gate in enumerate(gates):
+            if are_lines_intersecting(line,(gate[0][0],gate[0][1],gate[-1][0],gate[-1][1])) and i not in gate_remove_list:
+                score += 1
+                gate_remove_list.append(i)
+    gates = np.delete(gates,gate_remove_list,axis=0)
+                
+
     # Clear the screen
     game_window.fill(WHITE)
 
@@ -221,22 +269,24 @@ while game_running:
     for point in points:
         pygame.draw.circle(game_window, (255,0,0), (point), 5)
 
-    # Draw car bounding
-    for point in car_points[:2]:
-        pygame.draw.circle(game_window, (0,255,0), (point), 5)
-    for point in car_points[2:]:
-        pygame.draw.circle(game_window, (0,0,255), (point), 5)
-    
     # Draw the score
-    #score_text = SCORE_FONT.render(f'Score: {score//60}', True, WHITE)
-    #game_window.blit(score_text, (10, 10))
+    score_text = SCORE_FONT.render(f'Score: {score}', True, WHITE)
+    game_window.blit(score_text, (10, 10))
 
-    # Draw end point
-    for point in config[1:]:
-        pygame.draw.circle(game_window, (255,0,255), point, 5)
+    # Draw lines
+    for i, line in enumerate(config[1:]):
+        if i in gate_remove_list:
+            color = (255,0,0)
+        else:
+            color = (0,255,0)
+        for point in line:
+            pygame.draw.circle(game_window, color, point, 5)
 
-    # Update the score
-    score += 1
+    # Draw car bounding
+    pygame.draw.circle(game_window, (0,255,0), (car_points[0][0],car_points[0][1]), 5)
+    pygame.draw.circle(game_window, (255,0,0), (car_points[1][0],car_points[1][1]), 5)
+    pygame.draw.circle(game_window, (0,0,0), (car_points[2][0],car_points[2][1]), 5)
+    pygame.draw.circle(game_window, (0,0,255), (car_points[3][0],car_points[3][1]), 5)
 
     # Update the display
     pygame.display.update()

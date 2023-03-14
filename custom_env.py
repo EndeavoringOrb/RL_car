@@ -3,6 +3,7 @@ from gym import spaces
 import numpy as np
 import math
 import pygame
+import threading
 
 pygame.init()
 
@@ -14,9 +15,10 @@ class racingEnv(gym.Env):
         # Example when using discrete actions:
         low = np.concatenate((np.zeros(20), np.array([-500, -500]), np.array([0])))
         high = np.concatenate((np.ones(20), np.array([500, 500]), np.array([1])))
-        self.action_space = spaces.Box(low=0, high=1, shape=(4,2), dtype=np.float32)
+        #self.action_space = spaces.Box(low=0, high=1, shape=(4,2), dtype=np.float32)
+        self.action_space = spaces.Discrete(8)
         # Example for using image as input (channel-first; channel-last also works):
-        self.observation_space = spaces.Box(low=0, high=1000, shape=(8,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=1000, shape=(11,), dtype=np.float32) #8 sensor x,y - 2 velocity x,y - 1 angle
         self.reward = 0
         self.velocity = [0,0]
         self.friction_constant = 0.987
@@ -31,10 +33,17 @@ class racingEnv(gym.Env):
         self.config = config
         center_x = int(config[0][0])
         center_y = int(config[0][1])
-        self.max_distance = ((self.config[-1][0]-center_x)**2 + (self.config[-1][1]-center_y)**2)**0.5
         self.angle = 180
         self.car_shape = [6,15]
         self.done = False
+        self.gates_original = config[1:]
+        self.gates = self.gates_original
+
+        #self.my_image = bg_img
+        #og_size = self.my_image.get_size()
+        #self.game_window = pygame.display.set_mode(og_size)
+        #self.SCORE_FONT = pygame.font.SysFont('Arial', 30)
+        #self.clock = pygame.time.Clock()
     
     def deg_to_rad(self, angle):
         return angle * math.pi / 180
@@ -182,26 +191,86 @@ class racingEnv(gym.Env):
                 ret_list.append(i)
         return ret_list
 
+    def are_lines_intersecting(self, line1, line2):
+        """
+        Check if two lines are intersecting, given their endpoints.
+        
+        Parameters:
+        line1 (tuple): Endpoints of the first line in the format (x1, y1, x2, y2).
+        line2 (tuple): Endpoints of the second line in the format (x1, y1, x2, y2).
+        
+        Returns:
+        bool: True if the two lines are intersecting, False otherwise.
+        """
+        x1, y1, x2, y2 = line1
+        x3, y3, x4, y4 = line2
+        
+        # Calculate the slopes and y-intercepts of the two lines
+        slope1 = (y2 - y1) / (x2 - x1) if x2 - x1 != 0 else float('inf')
+        slope2 = (y4 - y3) / (x4 - x3) if x4 - x3 != 0 else float('inf')
+        
+        yint1 = y1 - slope1 * x1 if x2 - x1 != 0 else x1
+        yint2 = y3 - slope2 * x3 if x4 - x3 != 0 else x3
+        
+        # If the slopes are equal, the lines are either parallel or the same line
+        if slope1 == slope2:
+            return False
+        
+        # Calculate the x-coordinate of the intersection point
+        if slope1 == float('inf'):
+            x_int = x1
+        elif slope2 == float('inf'):
+            x_int = x3
+        else:
+            x_int = (yint2 - yint1) / (slope1 - slope2)
+        
+        # Check if the intersection point is within the range of the two lines
+        if (x1 <= x_int <= x2 or x2 <= x_int <= x1) and (x3 <= x_int <= x4 or x4 <= x_int <= x3) and (y1 <= yint2 <= y2 or y3 <= yint1 <= y4):
+            return True
+        else:
+            return False
+
     def step(self, action):
         #self.reward = 0
         self.velocity[0],self.velocity[1] = self.velocity[0]*self.friction_constant,self.velocity[1]*self.friction_constant
 
         # Move the car
-        if action[0][0] > action[0][1]:
-            self.angle += self.TURN_SPEED
-            self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
-        if action[1][0] > action[1][1]:
-            self.angle -= self.TURN_SPEED
-            self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
-        if action[2][0] > action[2][1]:
+        # action : w,a,s,d,wa,wd,sa,sd
+        if action == 0: #forward
             self.velocity[0] += self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] += self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
-        else:
-            self.reward -= 0.05
-        if action[3][0] > action[3][1]:
+            self.reward += 0.1
+        if action == 1: #left
+            self.angle += self.TURN_SPEED
+            self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
+        if action == 2: #back
             self.velocity[0] -= self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] -= self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
-            self.reward -= 0.5
+        if action == 3: #right
+            self.angle -= self.TURN_SPEED
+            self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
+        if action == 4: #forward left
+            self.velocity[0] += self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
+            self.velocity[1] += self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
+            self.angle += self.TURN_SPEED
+            self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
+            self.reward += 0.1
+        if action == 5: #forward right
+            self.velocity[0] += self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
+            self.velocity[1] += self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
+            self.angle -= self.TURN_SPEED
+            self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
+            self.reward += 0.1
+        if action == 6: #backward left
+            self.velocity[0] -= self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
+            self.velocity[1] -= self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
+            self.angle += self.TURN_SPEED
+            self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
+        if action == 7: #backward right
+            self.velocity[0] -= self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
+            self.velocity[1] -= self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
+            self.angle -= self.TURN_SPEED
+            self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
 
         self.car_points = self.translate_points(self.car_points,self.velocity[0],self.velocity[1])
 
@@ -218,30 +287,76 @@ class racingEnv(gym.Env):
             self.car_points = self.translate_points(self.car_points,0,-1)
             self.velocity[1] = 0
 
-        remove_list = []
-        coords = self.get_coordinates_in_box(self.car_points[0][0],self.car_points[0][1],self.car_points[3][0],self.car_points[3][1])
-        for i in range(len(self.config[1:])):
-            dot_list = self.arr_in_arr(self.config[i+1],coords)
-            remove_list.extend(dot_list)
-        self.config = np.delete(self.config, remove_list, 0)
-        for j in range(len(remove_list)):
-            self.reward += 2
-
         # Draw the sensors
         distances, points = self.find_distances(self.car_points[0,0],self.car_points[0,1],self.car_points[1,0],self.car_points[1,1],self.car_points[2,0],self.car_points[2,1],self.car_points[3,0],self.car_points[3,1],self.angle,self.np_img)
 
-        observation = np.array(distances)
+        #center_x = int((self.car_points[0,0] + self.car_points[1,0] + self.car_points[2,0] + self.car_points[3,0]) / 4)
+        #center_y = int((self.car_points[0,1] + self.car_points[1,1] + self.car_points[2,1] + self.car_points[3,1]) / 4)
 
-        center_x = int((self.car_points[0,0] + self.car_points[1,0] + self.car_points[2,0] + self.car_points[3,0]) / 4)
-        center_y = int((self.car_points[0,1] + self.car_points[1,1] + self.car_points[2,1] + self.car_points[3,1]) / 4)
-        end_distance = ((self.config[-1][0]-center_x)**2 + (self.config[-1][1]-center_y)**2)**0.5
+        if len(self.gates) < 1:
+            self.gates = self.gates_original
 
-        info = {}
+        gate_remove_list = []
+        line1 = (self.car_points[0][0],self.car_points[0][1],self.car_points[1][0],self.car_points[1][1])
+        line2 = (self.car_points[1][0],self.car_points[1][1],self.car_points[2][0],self.car_points[2][1])
+        line3 = (self.car_points[2][0],self.car_points[2][1],self.car_points[3][0],self.car_points[2][1])
+        line4 = (self.car_points[3][0],self.car_points[3][1],self.car_points[0][0],self.car_points[0][1])
+        for line in [line1,line2,line3,line4]:
+            for i, gate in enumerate(self.gates):
+                if self.are_lines_intersecting(line,(gate[0][0],gate[0][1],gate[-1][0],gate[-1][1])) and i not in gate_remove_list:
+                    self.reward += 2
+                    print("gate!")
+                    gate_remove_list.append(i)
+        self.gates = np.delete(self.gates,gate_remove_list,axis=0)
 
         if self.np_img[int(self.car_points[0,1]),int(self.car_points[0,0])] == 0 or self.np_img[int(self.car_points[1,1]),int(self.car_points[1,0])] == 0 or self.np_img[int(self.car_points[2,1]),int(self.car_points[2,0])] == 0 or self.np_img[int(self.car_points[3,1]),int(self.car_points[3,0])] == 0:
             self.reward -= 1
             self.done = True
             self.reset()
+
+        observation = np.array([*distances,self.velocity[0],self.velocity[1],math.sin(self.deg_to_rad(self.angle))])
+
+        info = {}
+
+        '''
+        # Clear the screen
+        self.game_window.fill((255,255,255))
+
+        # Draw the background
+        self.game_window.blit(self.my_image, (0,0))
+
+        # Draw car png
+        #game_window.blit(car_image2, (car_points[0][0], car_points[0][1]))
+
+        # Draw the sensors
+        distances, points = self.find_distances(self.car_points[0][0],self.car_points[0][1],self.car_points[1][0],self.car_points[1][1],self.car_points[2][0],self.car_points[2][1],self.car_points[3][0],self.car_points[3][1],self.angle,self.np_img)
+        for point in points:
+            pygame.draw.circle(self.game_window, (255,0,0), (point), 5)
+
+        # Draw the score
+        self.score_text = self.SCORE_FONT.render(f'Score: {self.reward}', True, (255,255,255))
+        self.game_window.blit(self.score_text, (10, 10))
+
+        # Draw lines
+        for i, line in enumerate(self.config[1:]):
+            if i in gate_remove_list:
+                color = (255,0,0)
+            else:
+                color = (0,255,0)
+            for point in line:
+                pygame.draw.circle(self.game_window, color, point, 5)
+
+        # Draw car bounding
+        pygame.draw.circle(self.game_window, (0,255,0), (self.car_points[0][0],self.car_points[0][1]), 5)
+        pygame.draw.circle(self.game_window, (255,0,0), (self.car_points[1][0],self.car_points[1][1]), 5)
+        pygame.draw.circle(self.game_window, (0,0,0), (self.car_points[2][0],self.car_points[2][1]), 5)
+        pygame.draw.circle(self.game_window, (0,0,255), (self.car_points[3][0],self.car_points[3][1]), 5)
+
+        # Update the display
+        pygame.display.update()
+
+        self.clock.tick(60)
+        '''
 
         return observation, self.reward, self.done, info
 
@@ -253,7 +368,8 @@ class racingEnv(gym.Env):
         self.angle = 180
         self.velocity = [0,0]
         self.reward = 0
+        self.gates = self.gates_original
         self.car_points = [(self.config[0][0]-self.car_shape[0]/2,self.config[0][1]-self.car_shape[1]/2),(self.config[0][0]+self.car_shape[0]/2,self.config[0][1]-self.car_shape[1]/2),(self.config[0][0]-self.car_shape[0]/2,self.config[0][1]+self.car_shape[1]/2),(self.config[0][0]+self.car_shape[0]/2,self.config[0][1]+self.car_shape[1]/2)]
         distances, points = self.find_distances(self.car_points[0][0],self.car_points[0][1],self.car_points[1][0],self.car_points[1][1],self.car_points[2][0],self.car_points[2][1],self.car_points[3][0],self.car_points[3][1],self.angle,self.np_img)
-        observation = distances
+        observation = np.array([*distances,self.velocity[0],self.velocity[1],math.sin(self.deg_to_rad(self.angle))])
         return observation
