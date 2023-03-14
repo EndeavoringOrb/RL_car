@@ -7,7 +7,7 @@ from stable_baselines3 import PPO, DQN
 pygame.init()
 
 # Load the saved model from the file path
-model_path = "dqn_model0/38912.zip"  # Replace with the file path to your saved model
+model_path = "dqn_model1/88064.zip"  # Replace with the file path to your saved model
 img_num = 4
 model = DQN.load(model_path)
 
@@ -175,14 +175,23 @@ def are_lines_intersecting(line1, line2):
     # Calculate the x-coordinate of the intersection point
     if slope1 == float('inf'):
         x_int = x1
+        y_int = yint2 + slope2 * (x_int - x3)
     elif slope2 == float('inf'):
         x_int = x3
+        y_int = yint1 + slope1 * (x_int - x1)
     else:
         x_int = (yint2 - yint1) / (slope1 - slope2)
+        y_int = yint1 + slope1 * (x_int - x1)
     
     # Check if the intersection point is within the range of the two lines
-    if (x1 <= x_int <= x2 or x2 <= x_int <= x1) and (x3 <= x_int <= x4 or x4 <= x_int <= x3) and (y1 <= yint2 <= y2 or y3 <= yint1 <= y4):
-        return True
+    if (x1 <= x_int <= x2 or x2 <= x_int <= x1) and (x3 <= x_int <= x4 or x4 <= x_int <= x3):
+        if slope1 == float('inf') or slope2 == float('inf'):
+            if (y1 <= yint2 <= y2 or y2 <= yint2 <= y1) or (y3 <= yint1 <= y4 or y4 <= yint1 <= y3):
+                return True
+            else:
+                return False
+        else:
+            return True
     else:
         return False
 
@@ -200,6 +209,7 @@ distances, points = find_distances(car_points[0][0],car_points[0][1],car_points[
 gate_remove_list = []
 while game_running:
     if game_over == True:
+        gate_remove_list = []
         gates = gates_original
         score = 0
         angle = 180

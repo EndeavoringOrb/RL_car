@@ -219,14 +219,23 @@ class racingEnv(gym.Env):
         # Calculate the x-coordinate of the intersection point
         if slope1 == float('inf'):
             x_int = x1
+            y_int = yint2 + slope2 * (x_int - x3)
         elif slope2 == float('inf'):
             x_int = x3
+            y_int = yint1 + slope1 * (x_int - x1)
         else:
             x_int = (yint2 - yint1) / (slope1 - slope2)
+            y_int = yint1 + slope1 * (x_int - x1)
         
         # Check if the intersection point is within the range of the two lines
-        if (x1 <= x_int <= x2 or x2 <= x_int <= x1) and (x3 <= x_int <= x4 or x4 <= x_int <= x3) and (y1 <= yint2 <= y2 or y3 <= yint1 <= y4):
-            return True
+        if (x1 <= x_int <= x2 or x2 <= x_int <= x1) and (x3 <= x_int <= x4 or x4 <= x_int <= x3):
+            if slope1 == float('inf') or slope2 == float('inf'):
+                if (y1 <= yint2 <= y2 or y2 <= yint2 <= y1) or (y3 <= yint1 <= y4 or y4 <= yint1 <= y3):
+                    return True
+                else:
+                    return False
+            else:
+                return True
         else:
             return False
 
@@ -296,18 +305,18 @@ class racingEnv(gym.Env):
         if len(self.gates) < 1:
             self.gates = self.gates_original
 
-        gate_remove_list = []
+        self.gate_remove_list = []
         line1 = (self.car_points[0][0],self.car_points[0][1],self.car_points[1][0],self.car_points[1][1])
         line2 = (self.car_points[1][0],self.car_points[1][1],self.car_points[2][0],self.car_points[2][1])
         line3 = (self.car_points[2][0],self.car_points[2][1],self.car_points[3][0],self.car_points[2][1])
         line4 = (self.car_points[3][0],self.car_points[3][1],self.car_points[0][0],self.car_points[0][1])
         for line in [line1,line2,line3,line4]:
             for i, gate in enumerate(self.gates):
-                if self.are_lines_intersecting(line,(gate[0][0],gate[0][1],gate[-1][0],gate[-1][1])) and i not in gate_remove_list:
+                if self.are_lines_intersecting(line,(gate[0][0],gate[0][1],gate[-1][0],gate[-1][1])) and i not in self.gate_remove_list:
                     self.reward += 2
                     print("gate!")
-                    gate_remove_list.append(i)
-        self.gates = np.delete(self.gates,gate_remove_list,axis=0)
+                    self.gate_remove_list.append(i)
+        self.gates = np.delete(self.gates,self.gate_remove_list,axis=0)
 
         if self.np_img[int(self.car_points[0,1]),int(self.car_points[0,0])] == 0 or self.np_img[int(self.car_points[1,1]),int(self.car_points[1,0])] == 0 or self.np_img[int(self.car_points[2,1]),int(self.car_points[2,0])] == 0 or self.np_img[int(self.car_points[3,1]),int(self.car_points[3,0])] == 0:
             self.reward -= 1
@@ -364,6 +373,7 @@ class racingEnv(gym.Env):
         self.stop_flag = True
 
     def reset(self):
+        self.gate_remove_list = []
         self.config = self._config
         self.angle = 180
         self.velocity = [0,0]
