@@ -8,7 +8,7 @@ import threading
 pygame.init()
 
 class racingEnv(gym.Env):
-    def __init__(self, np_img, bg_img, config):
+    def __init__(self, np_img, bg_img, config, allow='all'):
         super(racingEnv, self).__init__()
         # Define action and observation space
         # They must be gym.spaces objects
@@ -38,6 +38,11 @@ class racingEnv(gym.Env):
         self.done = False
         self.gates_original = config[1:]
         self.gates = self.gates_original
+        self.velocity_reward_mult = 1
+        self.allow = allow
+        self.vel = 0
+        self.gate_remove_list = []
+
 
         #self.my_image = bg_img
         #og_size = self.my_image.get_size()
@@ -245,41 +250,53 @@ class racingEnv(gym.Env):
 
         # Move the car
         # action : w,a,s,d,wa,wd,sa,sd
-        if action == 0: #forward
+        action_done = False
+        if action == 0 and (self.allow == 'all' or 'all' in self.allow or 'forward' in self.allow): #forward
             self.velocity[0] += self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] += self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
-            self.reward += 0.1
-        if action == 1: #left
+            action_done = True
+            #self.reward += 0.1
+        elif action == 1 and (self.allow == 'all' or 'left' in self.allow): #left
             self.angle += self.TURN_SPEED
             self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
-        if action == 2: #back
+            action_done = True
+        elif action == 2 and (self.allow == 'all' or 'back' in self.allow): #back
             self.velocity[0] -= self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] -= self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
-        if action == 3: #right
+            action_done = True
+        elif action == 3 and (self.allow == 'all' or 'right' in self.allow): #right
             self.angle -= self.TURN_SPEED
             self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
-        if action == 4: #forward left
+            action_done = True
+        elif action == 4 and (self.allow == 'all' or 'forward left' in self.allow): #forward left
             self.velocity[0] += self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] += self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
             self.angle += self.TURN_SPEED
             self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
-            self.reward += 0.1
-        if action == 5: #forward right
+            #self.reward += 0.1
+            action_done = True
+        elif action == 5 and (self.allow == 'all' or 'forward right' in self.allow): #forward right
             self.velocity[0] += self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] += self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
             self.angle -= self.TURN_SPEED
             self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
-            self.reward += 0.1
-        if action == 6: #backward left
+            #self.reward += 0.1
+            action_done = True
+        elif action == 6 and (self.allow == 'all' or 'backward left' in self.allow): #backward left
             self.velocity[0] -= self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] -= self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
             self.angle += self.TURN_SPEED
             self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
-        if action == 7: #backward right
+            action_done = True
+        elif action == 7 and (self.allow == 'all' or 'backward right' in self.allow): #backward right
             self.velocity[0] -= self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] -= self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
             self.angle -= self.TURN_SPEED
             self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
+            action_done = True
+        
+        if action_done == False:
+            self.reward -= 1
 
         self.car_points = self.translate_points(self.car_points,self.velocity[0],self.velocity[1])
 
@@ -304,8 +321,9 @@ class racingEnv(gym.Env):
 
         if len(self.gates) < 1:
             self.gates = self.gates_original
+            self.gate_remove_list = []
 
-        self.gate_remove_list = []
+        
         line1 = (self.car_points[0][0],self.car_points[0][1],self.car_points[1][0],self.car_points[1][1])
         line2 = (self.car_points[1][0],self.car_points[1][1],self.car_points[2][0],self.car_points[2][1])
         line3 = (self.car_points[2][0],self.car_points[2][1],self.car_points[3][0],self.car_points[2][1])
@@ -313,15 +331,24 @@ class racingEnv(gym.Env):
         for line in [line1,line2,line3,line4]:
             for i, gate in enumerate(self.gates):
                 if self.are_lines_intersecting(line,(gate[0][0],gate[0][1],gate[-1][0],gate[-1][1])) and i not in self.gate_remove_list:
-                    self.reward += 2
-                    print("gate!")
+                    self.reward += 30
+                    #print("\ngate!\n")
                     self.gate_remove_list.append(i)
-        self.gates = np.delete(self.gates,self.gate_remove_list,axis=0)
+        #self.gates = np.delete(self.gates,self.gate_remove_list,axis=0)
 
         if self.np_img[int(self.car_points[0,1]),int(self.car_points[0,0])] == 0 or self.np_img[int(self.car_points[1,1]),int(self.car_points[1,0])] == 0 or self.np_img[int(self.car_points[2,1]),int(self.car_points[2,0])] == 0 or self.np_img[int(self.car_points[3,1]),int(self.car_points[3,0])] == 0:
-            self.reward -= 1
+            self.reward -= 35
             self.done = True
             self.reset()
+
+        # add reward for velocity. bigger speed means bigger reward
+        try:
+            prev_vel = self.vel
+            self.vel = (((self.velocity[0])**2+(self.velocity[1])**2)**0.5)
+            #print(vel)
+            self.reward += self.vel if self.vel > prev_vel else self.vel - prev_vel
+        except ZeroDivisionError:
+            pass
 
         observation = np.array([*distances,self.velocity[0],self.velocity[1],math.sin(self.deg_to_rad(self.angle))])
 
@@ -373,6 +400,7 @@ class racingEnv(gym.Env):
         self.stop_flag = True
 
     def reset(self):
+        #print(f"{self.reward:.5f}       ",end="\r")
         self.gate_remove_list = []
         self.config = self._config
         self.angle = 180

@@ -2,12 +2,13 @@ import pygame
 import math
 import numpy as np
 from stable_baselines3 import PPO, DQN
+from custom_env import racingEnv
 
 # Initialize Pygame
 pygame.init()
 
 # Load the saved model from the file path
-model_path = "dqn_model1/88064.zip"  # Replace with the file path to your saved model
+model_path = "dqn_model11/458752.zip"  # Replace with the file path to your saved model
 img_num = 4
 model = DQN.load(model_path)
 
@@ -207,6 +208,7 @@ gates_original = config[1:]
 gates = gates_original
 distances, points = find_distances(car_points[0][0],car_points[0][1],car_points[1][0],car_points[1][1],car_points[2][0],car_points[2][1],car_points[3][0],car_points[3][1],angle,np_img)
 gate_remove_list = []
+allow=['forward','right','left','backward']
 while game_running:
     if game_over == True:
         gate_remove_list = []
@@ -223,46 +225,50 @@ while game_running:
     # Move the car
     # action : w,a,s,d,wa,wd,sa,sd
     action, _ = model.predict(np.array([*distances,velocity[0],velocity[1],math.sin(deg_to_rad(angle))]))
-    if action == 0: #forward
-        print("forward         ",end="\r")
+    action_done = False
+    if action == 0 and (allow == 'all' or 'all' in allow or 'forward' in allow): #forward
         velocity[0] += CAR_SPEED * math.sin((angle/180)*math.pi)
         velocity[1] += CAR_SPEED * math.cos((angle/180)*math.pi)
-    if action == 1: #left
-        print("left            ",end="\r")
+        action_done = True
+        #reward += 0.1
+    elif action == 1 and (allow == 'all' or 'left' in allow): #left
         angle += TURN_SPEED
         car_points = rotate_points(car_points,-TURN_SPEED)
-    if action == 2: #back
-        print("back            ",end="\r")
+        action_done = True
+    elif action == 2 and (allow == 'all' or 'back' in allow): #back
         velocity[0] -= CAR_SPEED * math.sin((angle/180)*math.pi)
         velocity[1] -= CAR_SPEED * math.cos((angle/180)*math.pi)
-    if action == 3: #right
-        print("right           ",end="\r")
+        action_done = True
+    elif action == 3 and (allow == 'all' or 'right' in allow): #right
         angle -= TURN_SPEED
         car_points = rotate_points(car_points,TURN_SPEED)
-    if action == 4: #forward left
-        print("forward left    ",end="\r")
+        action_done = True
+    elif action == 4 and (allow == 'all' or 'forward left' in allow): #forward left
         velocity[0] += CAR_SPEED * math.sin((angle/180)*math.pi)
         velocity[1] += CAR_SPEED * math.cos((angle/180)*math.pi)
         angle += TURN_SPEED
         car_points = rotate_points(car_points,-TURN_SPEED)
-    if action == 5: #forward right
-        print("forward right    ",end="\r")
+        #reward += 0.1
+        action_done = True
+    elif action == 5 and (allow == 'all' or 'forward right' in allow): #forward right
         velocity[0] += CAR_SPEED * math.sin((angle/180)*math.pi)
         velocity[1] += CAR_SPEED * math.cos((angle/180)*math.pi)
         angle -= TURN_SPEED
         car_points = rotate_points(car_points,TURN_SPEED)
-    if action == 6: #backward left
-        print("backward left    ",end="\r")
+        #reward += 0.1
+        action_done = True
+    elif action == 6 and (allow == 'all' or 'backward left' in allow): #backward left
         velocity[0] -= CAR_SPEED * math.sin((angle/180)*math.pi)
         velocity[1] -= CAR_SPEED * math.cos((angle/180)*math.pi)
         angle += TURN_SPEED
         car_points = rotate_points(car_points,-TURN_SPEED)
-    if action == 7: #backward right
-        print("backward right    ",end="\r")
+        action_done = True
+    elif action == 7 and (allow == 'all' or 'backward right' in allow): #backward right
         velocity[0] -= CAR_SPEED * math.sin((angle/180)*math.pi)
         velocity[1] -= CAR_SPEED * math.cos((angle/180)*math.pi)
         angle -= TURN_SPEED
         car_points = rotate_points(car_points,TURN_SPEED)
+        action_done = True
 
     car_x += velocity[0]
     car_y += velocity[1]
