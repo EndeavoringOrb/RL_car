@@ -2,6 +2,7 @@
 !pip install pygame
 !pip install numpy
 !pip install gym
+!pip install wget
 
 
 from stable_baselines3 import PPO
@@ -11,6 +12,11 @@ import gym
 from gym import spaces
 
 !nvidia-smi
+!wget https://github.com/EndeavoringOrb/RL_car/blob/main/model%20(10).zip
+!wget https://raw.githubusercontent.com/EndeavoringOrb/RL_car/main/custom_env.py
+!wget https://raw.githubusercontent.com/EndeavoringOrb/RL_car/main/image4.npy
+!wget https://raw.githubusercontent.com/EndeavoringOrb/RL_car/main/image4.png
+!wget https://raw.githubusercontent.com/EndeavoringOrb/RL_car/main/config4.npy
 
 #then upload custom_env.py to the files
 #then paste SB3train.py into a cell and run it
