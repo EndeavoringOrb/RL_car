@@ -8,7 +8,7 @@ from custom_env import racingEnv
 pygame.init()
 
 # Load the saved model from the file path
-model_path = "dqn_model24/118784.zip"  # Replace with the file path to your saved model
+model_path = "model (10).zip"  # Replace with the file path to your saved model
 img_num = 4
 model = DQN.load(model_path)
 
