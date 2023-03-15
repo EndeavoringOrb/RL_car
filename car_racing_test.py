@@ -8,7 +8,7 @@ from custom_env import racingEnv
 pygame.init()
 
 # Load the saved model from the file path
-model_path = "dqn_model11/458752.zip"  # Replace with the file path to your saved model
+model_path = "dqn_model24/118784.zip"  # Replace with the file path to your saved model
 img_num = 4
 model = DQN.load(model_path)
 
@@ -222,24 +222,35 @@ while game_running:
         car_points = [(config[0][0]-car_shape[0]/2,config[0][1]-car_shape[1]/2),(config[0][0]+car_shape[0]/2,config[0][1]-car_shape[1]/2),(config[0][0]-car_shape[0]/2,config[0][1]+car_shape[1]/2),(config[0][0]+car_shape[0]/2,config[0][1]+car_shape[1]/2)]
     velocity[0],velocity[1] = velocity[0]*friction_constant,velocity[1]*friction_constant
 
+
+    normalized_distances = [distance/1414.2135623731 for distance in distances]
+    normalize_velocity = lambda x: (x if abs(x) <= 4 else 4*(x/abs(x)))/2 - 1
+    normalized_velocity = [normalize_velocity(velocity[0]),normalize_velocity(velocity[1])]
+
+    observation = np.array([*normalized_distances,normalized_velocity[0],normalized_velocity[1],math.sin(deg_to_rad(angle))])
     # Move the car
     # action : w,a,s,d,wa,wd,sa,sd
-    action, _ = model.predict(np.array([*distances,velocity[0],velocity[1],math.sin(deg_to_rad(angle))]))
+    action, _ = model.predict(observation)
     action_done = False
-    if action == 0 and (allow == 'all' or 'all' in allow or 'forward' in allow): #forward
+    print(f" {action}",end = " ")
+    if action == 0: #forward
+        print("forward ",end="\r")
         velocity[0] += CAR_SPEED * math.sin((angle/180)*math.pi)
         velocity[1] += CAR_SPEED * math.cos((angle/180)*math.pi)
         action_done = True
         #reward += 0.1
-    elif action == 1 and (allow == 'all' or 'left' in allow): #left
+    elif action == 1: #left
+        print("left    ",end="\r")
         angle += TURN_SPEED
         car_points = rotate_points(car_points,-TURN_SPEED)
         action_done = True
-    elif action == 2 and (allow == 'all' or 'back' in allow): #back
+    elif action == 2: #back
+        print("backward",end="\r")
         velocity[0] -= CAR_SPEED * math.sin((angle/180)*math.pi)
         velocity[1] -= CAR_SPEED * math.cos((angle/180)*math.pi)
         action_done = True
-    elif action == 3 and (allow == 'all' or 'right' in allow): #right
+    elif action == 3: #right
+        print("right   ",end="\r")
         angle -= TURN_SPEED
         car_points = rotate_points(car_points,TURN_SPEED)
         action_done = True

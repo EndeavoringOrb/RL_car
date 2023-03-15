@@ -5,6 +5,10 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from custom_env import racingEnv
 import pygame
 import numpy as np
+from datetime import datetime as dt
+
+steps = 2048
+eval_iters = 0
 
 """models_dir = f"SB3models/{int(time.time())}/"
 
@@ -13,7 +17,6 @@ if not os.path.exists(models_dir):
 
 print("making env...")
 img_num = int(input("Enter the racetrack number: "))
-steps = 2048
 my_image = pygame.image.load(f'image{img_num}.png')
 np_img = np.load(f"image{img_num}.npy")
 config = np.load(f"config{img_num}.npy", allow_pickle=True)
@@ -40,14 +43,14 @@ else:
 		model_params = {
 			"policy": "MlpPolicy",
 			"learning_rate": 1e-3,
-			"buffer_size": 10000,
-			"learning_starts": 0,
+			"buffer_size": 10_000,
+			"learning_starts": 128,
 			"batch_size": 32,
 			"tau": 1.0,
 			"gamma": 0.99,
-			"train_freq": 4,
+			"train_freq": 1,
 			"gradient_steps": 1,
-			"target_update_interval": 1000,
+			"target_update_interval": 256,
 			"exploration_fraction": 0.1,
 			"exploration_initial_eps": 1.0,
 			"exploration_final_eps": 0.02,
@@ -59,11 +62,19 @@ else:
 		loaded_timesteps = 0
 
 iters = 0
-while iters < 1000000000000:
-	print(f"learning step: {iters}")
+while True:
+	print(f"\nlearning step: {iters}")
 	iters += 1
+	start = dt.now()
 	model.learn(total_timesteps=steps, reset_num_timesteps=False)
-	mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=10)
-	print(f"\nMean reward: {mean_reward} +/- {std_reward}")
+	elapsed = dt.now() - start
+	print(f"\ntime to learn {steps} steps: {elapsed}")
+	if eval_iters > 0:
+		print("finished learning - evaluating model")
+		start = dt.now()
+		mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=eval_iters, return_episode_rewards=True)
+		elapsed = dt.now()-start
+		print(f"eval time for {eval_iters} iters: {elapsed}\naverage time: {elapsed/eval_iters}")
+		print(f"Mean reward: {mean_reward} +/- {std_reward}")
 	print("saving")
 	model.save(f"{'dqn' if model_type == 2 else 'ppo'}_model{model_number}/{loaded_timesteps+steps*iters}")

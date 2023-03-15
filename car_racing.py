@@ -291,6 +291,8 @@ while game_running:
     # Update the display
     pygame.display.update()
 
+    print(f"{velocity[0]:.2f}, {velocity[1]:.2f}, {(velocity[0]**2+velocity[1]**2)**0.5:.2f}")
+
     # Set the frame rate
     clock.tick(60)
 

@@ -13,17 +13,20 @@ class racingEnv(gym.Env):
         # Define action and observation space
         # They must be gym.spaces objects
         # Example when using discrete actions:
-        low = np.concatenate((np.zeros(20), np.array([-500, -500]), np.array([0])))
-        high = np.concatenate((np.ones(20), np.array([500, 500]), np.array([1])))
+        # Define the bounds for each dimension of the observation space
+        #low = np.array([0.0] * 8 + [-float('inf'), -float('inf'), -1.0])
+        #high = np.array([1000.0] * 8 + [float('inf'), float('inf'), 1.0])
         #self.action_space = spaces.Box(low=0, high=1, shape=(4,2), dtype=np.float32)
-        self.action_space = spaces.Discrete(8)
+        self.action_space = spaces.Discrete(4)
         # Example for using image as input (channel-first; channel-last also works):
-        self.observation_space = spaces.Box(low=0, high=1000, shape=(11,), dtype=np.float32) #8 sensor x,y - 2 velocity x,y - 1 angle
+        # Create the Box observation space
+        self.observation_space = spaces.Box(low=-1.0, high=1.0, dtype=np.float64, shape=(11,))
         self.reward = 0
         self.velocity = [0,0]
         self.friction_constant = 0.987
         self.TURN_SPEED = 5
         self.CAR_SPEED = 0.05
+        self.BACK_SPEED = self.CAR_SPEED * 0.5
         self.WINDOW_WIDTH = np_img.shape[1]
         self.WINDOW_HEIGHT = np_img.shape[0]
         self.np_img = np_img
@@ -245,26 +248,26 @@ class racingEnv(gym.Env):
             return False
 
     def step(self, action):
-        #self.reward = 0
+        self.reward = 0
         self.velocity[0],self.velocity[1] = self.velocity[0]*self.friction_constant,self.velocity[1]*self.friction_constant
 
         # Move the car
         # action : w,a,s,d,wa,wd,sa,sd
         action_done = False
-        if action == 0 and (self.allow == 'all' or 'all' in self.allow or 'forward' in self.allow): #forward
+        if action == 0: #forward  and (self.allow == 'all' or 'all' in self.allow or 'forward' in self.allow)
             self.velocity[0] += self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] += self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
             action_done = True
             #self.reward += 0.1
-        elif action == 1 and (self.allow == 'all' or 'left' in self.allow): #left
+        elif action == 1: #left  and (self.allow == 'all' or 'left' in self.allow)
             self.angle += self.TURN_SPEED
             self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
             action_done = True
-        elif action == 2 and (self.allow == 'all' or 'back' in self.allow): #back
-            self.velocity[0] -= self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
-            self.velocity[1] -= self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
+        elif action == 2: #back  and (self.allow == 'all' or 'back' in self.allow)
+            self.velocity[0] -= self.BACK_SPEED * math.sin((self.angle/180)*math.pi)
+            self.velocity[1] -= self.BACK_SPEED * math.cos((self.angle/180)*math.pi)
             action_done = True
-        elif action == 3 and (self.allow == 'all' or 'right' in self.allow): #right
+        elif action == 3: #right  and (self.allow == 'all' or 'right' in self.allow)
             self.angle -= self.TURN_SPEED
             self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
             action_done = True
@@ -331,26 +334,31 @@ class racingEnv(gym.Env):
         for line in [line1,line2,line3,line4]:
             for i, gate in enumerate(self.gates):
                 if self.are_lines_intersecting(line,(gate[0][0],gate[0][1],gate[-1][0],gate[-1][1])) and i not in self.gate_remove_list:
-                    self.reward += 30
+                    self.reward += 1
                     #print("\ngate!\n")
                     self.gate_remove_list.append(i)
         #self.gates = np.delete(self.gates,self.gate_remove_list,axis=0)
 
-        if self.np_img[int(self.car_points[0,1]),int(self.car_points[0,0])] == 0 or self.np_img[int(self.car_points[1,1]),int(self.car_points[1,0])] == 0 or self.np_img[int(self.car_points[2,1]),int(self.car_points[2,0])] == 0 or self.np_img[int(self.car_points[3,1]),int(self.car_points[3,0])] == 0:
-            self.reward -= 35
-            self.done = True
-            self.reset()
 
         # add reward for velocity. bigger speed means bigger reward
-        try:
+        '''try:
             prev_vel = self.vel
             self.vel = (((self.velocity[0])**2+(self.velocity[1])**2)**0.5)
             #print(vel)
-            self.reward += self.vel if self.vel > prev_vel else self.vel - prev_vel
+            self.reward += self.vel/4 if self.vel > prev_vel else 0
         except ZeroDivisionError:
-            pass
+            pass'''
 
-        observation = np.array([*distances,self.velocity[0],self.velocity[1],math.sin(self.deg_to_rad(self.angle))])
+        if self.np_img[int(self.car_points[0,1]),int(self.car_points[0,0])] == 0 or self.np_img[int(self.car_points[1,1]),int(self.car_points[1,0])] == 0 or self.np_img[int(self.car_points[2,1]),int(self.car_points[2,0])] == 0 or self.np_img[int(self.car_points[3,1]),int(self.car_points[3,0])] == 0:
+            self.reward = -3
+            self.done = True
+            #self.reset()
+
+        normalized_distances = [distance/1414.2135623731 for distance in distances]
+        normalize_velocity = lambda x: (x if abs(x) <= 4 else 4*(x/abs(x)))/2 - 1
+        normalized_velocity = [normalize_velocity(self.velocity[0]),normalize_velocity(self.velocity[1])]
+
+        observation = np.array([*normalized_distances,normalized_velocity[0],normalized_velocity[1],math.sin(self.deg_to_rad(self.angle))])
 
         info = {}
 
@@ -393,7 +401,7 @@ class racingEnv(gym.Env):
 
         self.clock.tick(60)
         '''
-
+        #print(self.reward, end=" ")
         return observation, self.reward, self.done, info
 
     def on_keypress(self, event):
@@ -401,6 +409,7 @@ class racingEnv(gym.Env):
 
     def reset(self):
         #print(f"{self.reward:.5f}       ",end="\r")
+        self.done = False
         self.gate_remove_list = []
         self.config = self._config
         self.angle = 180
@@ -410,4 +419,6 @@ class racingEnv(gym.Env):
         self.car_points = [(self.config[0][0]-self.car_shape[0]/2,self.config[0][1]-self.car_shape[1]/2),(self.config[0][0]+self.car_shape[0]/2,self.config[0][1]-self.car_shape[1]/2),(self.config[0][0]-self.car_shape[0]/2,self.config[0][1]+self.car_shape[1]/2),(self.config[0][0]+self.car_shape[0]/2,self.config[0][1]+self.car_shape[1]/2)]
         distances, points = self.find_distances(self.car_points[0][0],self.car_points[0][1],self.car_points[1][0],self.car_points[1][1],self.car_points[2][0],self.car_points[2][1],self.car_points[3][0],self.car_points[3][1],self.angle,self.np_img)
         observation = np.array([*distances,self.velocity[0],self.velocity[1],math.sin(self.deg_to_rad(self.angle))])
+        #print(observation.shape)
+        #print(observation)
         return observation
