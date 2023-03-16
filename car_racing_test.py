@@ -8,7 +8,7 @@ from custom_env import racingEnv
 pygame.init()
 
 # Load the saved model from the file path
-model_path = "model (10).zip"  # Replace with the file path to your saved model
+model_path = "dqn_model26/1359872.zip"  # Replace with the file path to your saved model
 img_num = 4
 model = DQN.load(model_path)
 
@@ -58,6 +58,12 @@ car_points = [(config[0][0]-car_shape[0]/2,config[0][1]-car_shape[1]/2),(config[
 
 # Set the initial score
 score = 0
+
+def get_gate_centers(gates):
+    centers = []
+    for gate in gates:
+        centers.append((sum([point[0] for point in gate]), sum([point[1] for point in gate])))
+    return centers
 
 def deg_to_rad(angle):
     return angle * math.pi / 180
@@ -206,6 +212,7 @@ velocity = [0,0]
 angle = 180
 gates_original = config[1:]
 gates = gates_original
+gate_centers = get_gate_centers(gates_original)
 distances, points = find_distances(car_points[0][0],car_points[0][1],car_points[1][0],car_points[1][1],car_points[2][0],car_points[2][1],car_points[3][0],car_points[3][1],angle,np_img)
 gate_remove_list = []
 allow=['forward','right','left','backward']
@@ -222,6 +229,18 @@ while game_running:
         car_points = [(config[0][0]-car_shape[0]/2,config[0][1]-car_shape[1]/2),(config[0][0]+car_shape[0]/2,config[0][1]-car_shape[1]/2),(config[0][0]-car_shape[0]/2,config[0][1]+car_shape[1]/2),(config[0][0]+car_shape[0]/2,config[0][1]+car_shape[1]/2)]
     velocity[0],velocity[1] = velocity[0]*friction_constant,velocity[1]*friction_constant
 
+
+    # find distance to closest gate
+    center_distances = []
+    center_x = int((car_points[0,0] + car_points[1,0] + car_points[2,0] + car_points[3,0]) / 4)
+    center_y = int((car_points[0,1] + car_points[1,1] + car_points[2,1] + car_points[3,1]) / 4)
+    for i, gate_center in enumerate(gate_centers):
+        center_distances.append([i, ((center_x-gate_center[0])**2+(center_y-gate_center[1])**2)**0.5])
+    closest_gate = min(center_distances, key=lambda x: x[1])
+
+    center_x /= 1000
+    center_y /= 1000
+    closest_gate = [closest_gate[1][0]/1000, closest_gate[1][1]/1000]
 
     normalized_distances = [distance/1414.2135623731 for distance in distances]
     normalize_velocity = lambda x: (x if abs(x) <= 4 else 4*(x/abs(x)))/2 - 1

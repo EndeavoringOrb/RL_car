@@ -20,7 +20,7 @@ class racingEnv(gym.Env):
         self.action_space = spaces.Discrete(4)
         # Example for using image as input (channel-first; channel-last also works):
         # Create the Box observation space
-        self.observation_space = spaces.Box(low=-1.0, high=1.0, dtype=np.float64, shape=(11,))
+        self.observation_space = spaces.Box(low=-1.0, high=1.0, dtype=np.float64, shape=(15,))
         self.reward = 0
         self.velocity = [0,0]
         self.friction_constant = 0.987
@@ -45,6 +45,7 @@ class racingEnv(gym.Env):
         self.allow = allow
         self.vel = 0
         self.gate_remove_list = []
+        self.gate_centers = self.get_gate_centers(self.gates_original)
 
 
         #self.my_image = bg_img
@@ -53,6 +54,12 @@ class racingEnv(gym.Env):
         #self.SCORE_FONT = pygame.font.SysFont('Arial', 30)
         #self.clock = pygame.time.Clock()
     
+    def get_gate_centers(self, gates):
+        centers = []
+        for gate in gates:
+            centers.append((sum([point[0] for point in gate]), sum([point[1] for point in gate])))
+        return centers
+
     def deg_to_rad(self, angle):
         return angle * math.pi / 180
 
@@ -319,9 +326,6 @@ class racingEnv(gym.Env):
         # Draw the sensors
         distances, points = self.find_distances(self.car_points[0,0],self.car_points[0,1],self.car_points[1,0],self.car_points[1,1],self.car_points[2,0],self.car_points[2,1],self.car_points[3,0],self.car_points[3,1],self.angle,self.np_img)
 
-        #center_x = int((self.car_points[0,0] + self.car_points[1,0] + self.car_points[2,0] + self.car_points[3,0]) / 4)
-        #center_y = int((self.car_points[0,1] + self.car_points[1,1] + self.car_points[2,1] + self.car_points[3,1]) / 4)
-
         if len(self.gates) < 1:
             self.gates = self.gates_original
             self.gate_remove_list = []
@@ -354,11 +358,24 @@ class racingEnv(gym.Env):
             self.done = True
             #self.reset()
 
+        # find distance to closest gate
+        center_distances = []
+        center_x = int((self.car_points[0,0] + self.car_points[1,0] + self.car_points[2,0] + self.car_points[3,0]) / 4)
+        center_y = int((self.car_points[0,1] + self.car_points[1,1] + self.car_points[2,1] + self.car_points[3,1]) / 4)
+        for i, gate_center in enumerate(self.gate_centers):
+            center_distances.append([i, ((center_x-gate_center[0])**2+(center_y-gate_center[1])**2)**0.5])
+        closest_gate = min(center_distances, key=lambda x: x[1])
+
+        center_x /= 1000
+        center_y /= 1000
+        closest_gate = [closest_gate[1][0]/1000, closest_gate[1][1]/1000]
+
+
         normalized_distances = [distance/1414.2135623731 for distance in distances]
         normalize_velocity = lambda x: (x if abs(x) <= 4 else 4*(x/abs(x)))/2 - 1
         normalized_velocity = [normalize_velocity(self.velocity[0]),normalize_velocity(self.velocity[1])]
 
-        observation = np.array([*normalized_distances,normalized_velocity[0],normalized_velocity[1],math.sin(self.deg_to_rad(self.angle))])
+        observation = np.array([*normalized_distances, normalized_velocity[0], normalized_velocity[1], math.sin(self.deg_to_rad(self.angle)), center_x, center_y, closest_gate[0], closest_gate[1]])
 
         info = {}
 
@@ -418,7 +435,25 @@ class racingEnv(gym.Env):
         self.gates = self.gates_original
         self.car_points = [(self.config[0][0]-self.car_shape[0]/2,self.config[0][1]-self.car_shape[1]/2),(self.config[0][0]+self.car_shape[0]/2,self.config[0][1]-self.car_shape[1]/2),(self.config[0][0]-self.car_shape[0]/2,self.config[0][1]+self.car_shape[1]/2),(self.config[0][0]+self.car_shape[0]/2,self.config[0][1]+self.car_shape[1]/2)]
         distances, points = self.find_distances(self.car_points[0][0],self.car_points[0][1],self.car_points[1][0],self.car_points[1][1],self.car_points[2][0],self.car_points[2][1],self.car_points[3][0],self.car_points[3][1],self.angle,self.np_img)
-        observation = np.array([*distances,self.velocity[0],self.velocity[1],math.sin(self.deg_to_rad(self.angle))])
+        
+        # find distance to closest gate
+        center_distances = []
+        center_x = int((self.car_points[0,0] + self.car_points[1,0] + self.car_points[2,0] + self.car_points[3,0]) / 4)
+        center_y = int((self.car_points[0,1] + self.car_points[1,1] + self.car_points[2,1] + self.car_points[3,1]) / 4)
+        for i, gate_center in enumerate(self.gate_centers):
+            center_distances.append([i, ((center_x-gate_center[0])**2+(center_y-gate_center[1])**2)**0.5])
+        closest_gate = min(center_distances, key=lambda x: x[1])
+
+        center_x /= 1000
+        center_y /= 1000
+        closest_gate = [closest_gate[1][0]/1000, closest_gate[1][1]/1000]
+
+
+        normalized_distances = [distance/1414.2135623731 for distance in distances]
+        normalize_velocity = lambda x: (x if abs(x) <= 4 else 4*(x/abs(x)))/2 - 1
+        normalized_velocity = [normalize_velocity(self.velocity[0]),normalize_velocity(self.velocity[1])]
+        
+        observation = np.array([*normalized_distances, normalized_velocity[0], normalized_velocity[1], math.sin(self.deg_to_rad(self.angle)), center_x, center_y, closest_gate[0], closest_gate[1]])
         #print(observation.shape)
         #print(observation)
         return observation
