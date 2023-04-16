@@ -1,6 +1,6 @@
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from custom_env_v2 import racingEnv
+from custom_env import racingEnv
 import pygame
 import numpy as np
 import keyboard

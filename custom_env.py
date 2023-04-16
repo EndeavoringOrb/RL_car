@@ -29,6 +29,7 @@ class racingEnv(gym.Env):
         self.BACK_SPEED = self.CAR_SPEED * 0.5
         self.WINDOW_WIDTH = np_img.shape[1]
         self.WINDOW_HEIGHT = np_img.shape[0]
+        self.WINDOW_SIZE = [self.WINDOW_WIDTH,self.WINDOW_HEIGHT]
         self.np_img = np_img
         #self.game_window = pygame.display.set_mode(np_img.shape)
         self.bg_img = bg_img
@@ -268,132 +269,66 @@ class racingEnv(gym.Env):
         self.velocity[0],self.velocity[1] = self.velocity[0]*self.friction_constant,self.velocity[1]*self.friction_constant
 
         # Move the car
-        # action : w,a,s,d,wa,wd,sa,sd
-        action_done = False
-        if action == 0: #forward  and (self.allow == 'all' or 'all' in self.allow or 'forward' in self.allow)
+        if action == 0:  # forward
             self.velocity[0] += self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] += self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
-            action_done = True
-        elif action == 1: #left  and (self.allow == 'all' or 'left' in self.allow)
+        elif action == 1:  # left
             self.angle += self.TURN_SPEED
-            self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
-            action_done = True
-        elif action == 2: #right  and (self.allow == 'all' or 'right' in self.allow)
+            self.car_points = self.rotate_points(self.car_points, -self.TURN_SPEED)
+        elif action == 2:  # right
             self.angle -= self.TURN_SPEED
-            self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
-            action_done = True
-        elif action == 3: #back  and (self.allow == 'all' or 'back' in self.allow)
+            self.car_points = self.rotate_points(self.car_points, self.TURN_SPEED)
+        elif action == 3:  # back
             self.velocity[0] -= self.BACK_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] -= self.BACK_SPEED * math.cos((self.angle/180)*math.pi)
-            action_done = True
-        
-        if action_done == False:
+        else:
             self.reward -= 1
 
-        self.car_points = self.translate_points(self.car_points,self.velocity[0],self.velocity[1])
+        self.car_points = self.translate_points(self.car_points, *self.velocity)
 
-        while np.array([i < 0 for i in self.car_points[:,0]]).any():
-            self.car_points = self.translate_points(self.car_points,1,0)
-            self.velocity[0] = 0
-        while np.array([i >= self.WINDOW_WIDTH for i in self.car_points[:,0]]).any():
-            self.car_points = self.translate_points(self.car_points,-1,0)
-            self.velocity[0] = 0
-        while np.array([i < 0 for i in self.car_points[:,1]]).any():
-            self.car_points = self.translate_points(self.car_points,0,1)
-            self.velocity[1] = 0
-        while np.array([i >= self.WINDOW_HEIGHT for i in self.car_points[:,1]]).any():
-            self.car_points = self.translate_points(self.car_points,0,-1)
-            self.velocity[1] = 0
+        # Keep car within the boundaries
+        for i in range(2):
+            self.velocity[i] = max(self.velocity[i], 0)
+            self.velocity[i] = min(self.velocity[i], self.WINDOW_SIZE[i])
+            while np.array([j < 0 or j >= self.WINDOW_SIZE[i] for j in self.car_points[:, i]]).any():
+                self.velocity[i] = 0
+                self.car_points[:, i] = np.clip(self.car_points[:, i], 0, self.WINDOW_SIZE[i] - 1)
 
-        # Draw the sensors
-        distances, points = self.find_distances(self.car_points[0,0],self.car_points[0,1],self.car_points[1,0],self.car_points[1,1],self.car_points[2,0],self.car_points[2,1],self.car_points[3,0],self.car_points[3,1],self.angle,self.np_img)
-
-        if len(self.gates) < 1:
-            self.gates = self.gates_original
-            self.gate_remove_list = []
-
-        
-        line1 = (self.car_points[0][0],self.car_points[0][1],self.car_points[1][0],self.car_points[1][1])
-        line2 = (self.car_points[1][0],self.car_points[1][1],self.car_points[2][0],self.car_points[2][1])
-        line3 = (self.car_points[2][0],self.car_points[2][1],self.car_points[3][0],self.car_points[2][1])
-        line4 = (self.car_points[3][0],self.car_points[3][1],self.car_points[0][0],self.car_points[0][1])
-        for line in [line1,line2,line3,line4]:
-            for i, gate in enumerate(self.gates):
-                if self.are_lines_intersecting(line,(gate[0][0],gate[0][1],gate[-1][0],gate[-1][1])) and i not in self.gate_remove_list:
-                    self.reward += self.gate_reward
-                    #print("\ngate!\n")
-                    self.gate_remove_list.append(i)
-        #self.gates = np.delete(self.gates,self.gate_remove_list,axis=0)
-
-        if self.np_img[int(self.car_points[0,1]),int(self.car_points[0,0])] == 0 or self.np_img[int(self.car_points[1,1]),int(self.car_points[1,0])] == 0 or self.np_img[int(self.car_points[2,1]),int(self.car_points[2,0])] == 0 or self.np_img[int(self.car_points[3,1]),int(self.car_points[3,0])] == 0:
+        # Check collision with walls
+        if not self.np_img[np.array(self.car_points, dtype=int).T].all():
             self.reward = self.wall_reward
             self.done = True
-            #self.reset()
 
-        relevant_gates = [gate for i, gate in enumerate(self.gates) if i not in self.gate_remove_list]
+        # Check if gate is crossed
+        for i, gate in enumerate(self.gates):
+            if i not in self.gate_remove_list:
+                car_line1 = (self.car_points[0][0], self.car_points[0][1], self.car_points[1][0], self.car_points[1][1])
+                car_line2 = (self.car_points[1][0], self.car_points[1][1], self.car_points[2][0], self.car_points[2][1])
+                car_line3 = (self.car_points[2][0], self.car_points[2][1], self.car_points[3][0], self.car_points[3][1])
+                car_line4 = (self.car_points[3][0], self.car_points[3][1], self.car_points[0][0], self.car_points[0][1])
+                gate_line = (*gate[0], *gate[-1])
+                if self.are_lines_intersecting(car_line1, gate_line) or \
+                self.are_lines_intersecting(car_line2, gate_line) or \
+                self.are_lines_intersecting(car_line3, gate_line) or \
+                self.are_lines_intersecting(car_line4, gate_line):
+                    self.gate_remove_list.append(i)
+                    self.reward += self.gate_reward
+
+        if len(self.gate_remove_list) == len(self.gates):
+            self.done = True
+
+        # Update state
+        relevant_gates = [self.gates[i] for i in range(len(self.gates)) if i not in self.gate_remove_list]
         self.gate_centers = self.get_gate_centers(relevant_gates)
-        # find distance to closest gate
-        center_distances = []
-        center_x = int((self.car_points[0][0] + self.car_points[1][0] + self.car_points[2][0] + self.car_points[3][0]) / 4)
-        center_y = int((self.car_points[0][1] + self.car_points[1][1] + self.car_points[2][1] + self.car_points[3][1]) / 4)
-        for i, gate_center in enumerate(self.gate_centers):
-            center_distances.append([i, ((center_x-gate_center[0])**2+(center_y-gate_center[1])**2)**0.5])
-        closest_gate = min(center_distances, key=lambda x: x[1])
 
-        center_x /= 500
-        center_x -= 1
-        center_y /= 500
-        center_y -= 1
-        closest_gate = [self.gate_centers[closest_gate[0]][0]/500-1, self.gate_centers[closest_gate[0]][1]/500-1]
+        # Calculate distance to closest gate
+        center = self.car_points.mean(axis=1).astype(int)
+        center_distances = np.linalg.norm(self.gate_centers - center.reshape(1, 4), axis=1)
+        closest_gate = np.argmin(center_distances)
+        self.state = (self.velocity, self.angle, center_distances, closest_gate)
 
+        return self.state, self.reward, self.done, {}
 
-        normalized_distances = [distance/1414.2135623731 for distance in distances]
-        normalize_velocity = lambda x: (x if abs(x) <= 4 else 4*(x/abs(x)))/2 - 1
-        normalized_velocity = [normalize_velocity(self.velocity[0]),normalize_velocity(self.velocity[1])]
-
-        observation = np.array([*normalized_distances, normalized_velocity[0], normalized_velocity[1], math.sin(self.deg_to_rad(self.angle)), center_x, center_y, closest_gate[0], closest_gate[1]])
-
-        info = {}
-
-        self.step_num += 1
-        self.step_num2 += 1
-        self.reward += self.idle_reward
-
-        new_vel = (self.velocity[0]**2+self.velocity[1]**2)**0.5
-        if new_vel > self.vel:
-            self.vel = new_vel
-            self.reward -= self.velocity_reward
-        elif new_vel < 0.01:
-            self.vel = new_vel
-            self.reward += self.velocity_reward
-        #else:
-        #    self.vel = new_vel
-        #    self.reward += self.velocity_reward
-        
-        if min(distances) < 18 and self.closeness_reward != 0:
-            thing = self.closeness_reward - self.closeness_reward*min(distances)/18
-            if thing >= self.closeness_reward:
-                thing = self.closeness_reward
-        else:
-            thing = 0
-        self.reward -= thing
-        print("closeness",thing)
-
-
-        center_x = int((self.car_points[0][0] + self.car_points[1][0] + self.car_points[2][0] + self.car_points[3][0]) / 4)
-        center_y = int((self.car_points[0][1] + self.car_points[1][1] + self.car_points[2][1] + self.car_points[3][1]) / 4)
-        const = 0.1
-        dist = ((closest_gate[0]-center_x)**2+(closest_gate[1]-center_y)**2)**0.5
-        thing = const/dist
-        thing = thing if thing < const else const
-        thing = thing if dist < self.old_distance else 0
-        self.reward += thing
-        self.old_distance = dist
-        print("gate dist",thing)
-        print(self.reward)
-        print(new_vel)
-
-        return observation, self.reward, self.done, info
 
     def on_keypress(self, event):
         self.stop_flag = True
@@ -403,33 +338,14 @@ class racingEnv(gym.Env):
         self.done = False
         self.gate_remove_list = []
         self.config = self._config
-        self.angle = 180
-        self.velocity = [0,0]
-        self.reward = 0
-        self.gates = self.gates_original
-        self.car_points = [(self.config[0][0]-self.car_shape[0]/2,self.config[0][1]-self.car_shape[1]/2),(self.config[0][0]+self.car_shape[0]/2,self.config[0][1]-self.car_shape[1]/2),(self.config[0][0]-self.car_shape[0]/2,self.config[0][1]+self.car_shape[1]/2),(self.config[0][0]+self.car_shape[0]/2,self.config[0][1]+self.car_shape[1]/2)]
-        distances, points = self.find_distances(self.car_points[0][0],self.car_points[0][1],self.car_points[1][0],self.car_points[1][1],self.car_points[2][0],self.car_points[2][1],self.car_points[3][0],self.car_points[3][1],self.angle,self.np_img)
-        
-        # find distance to closest gate
-        center_distances = []
-        center_x = int((self.car_points[0][0] + self.car_points[1][0] + self.car_points[2][0] + self.car_points[3][0]) / 4)
-        center_y = int((self.car_points[0][1] + self.car_points[1][1] + self.car_points[2][1] + self.car_points[3][1]) / 4)
-        for i, gate_center in enumerate(self.gate_centers):
-            center_distances.append([i, ((center_x-gate_center[0])**2+(center_y-gate_center[1])**2)**0.5])
+        self.angle, self.velocity, self.reward = 180, [0,0], 0
+        self.gates, self.car_points = self.gates_original, [(self.config[0][0]-self.car_shape[0]/2,self.config[0][1]-self.car_shape[1]/2),(self.config[0][0]+self.car_shape[0]/2,self.config[0][1]-self.car_shape[1]/2),(self.config[0][0]-self.car_shape[0]/2,self.config[0][1]+self.car_shape[1]/2),(self.config[0][0]+self.car_shape[0]/2,self.config[0][1]+self.car_shape[1]/2)]
+        distances, points = self.find_distances(*[p for point in self.car_points for p in point], self.angle, self.np_img)
+        center_x, center_y = sum(p[0] for p in self.car_points) / 4, sum(p[1] for p in self.car_points) / 4
+        center_distances = [[i, ((center_x-gate_center[0])**2+(center_y-gate_center[1])**2)**0.5] for i, gate_center in enumerate(self.gate_centers)]
         closest_gate = min(center_distances, key=lambda x: x[1])
-
-        center_x /= 500
-        center_x -= 1
-        center_y /= 500
-        center_y -= 1
-        closest_gate = [self.gate_centers[closest_gate[0]][0]/500-1, self.gate_centers[closest_gate[0]][1]/500-1]
-
-
-        normalized_distances = [distance/1414.2135623731 for distance in distances]
+        center_x, center_y = [(p/500-1) for p in [center_x, center_y]]
+        closest_gate = [(p/500-1) for p in self.gate_centers[closest_gate[0]]]
         normalize_velocity = lambda x: (x if abs(x) <= 4 else 4*(x/abs(x)))/2 - 1
-        normalized_velocity = [normalize_velocity(self.velocity[0]),normalize_velocity(self.velocity[1])]
-        
-        observation = np.array([*normalized_distances, normalized_velocity[0], normalized_velocity[1], math.sin(self.deg_to_rad(self.angle)), center_x, center_y, closest_gate[0], closest_gate[1]])
-        #print(observation.shape)
-        #print(observation)
+        observation = np.array([*(distance/1414.2135623731 for distance in distances), *(normalize_velocity(v) for v in self.velocity), math.sin(self.deg_to_rad(self.angle)), center_x, center_y, *closest_gate])
         return observation
