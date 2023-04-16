@@ -1,0 +1,5 @@
+Episode 148
+Total Reward = 2.8699999999999894
+Steps = 161
+Average Reward = 0.018
+Network Shape: (15, 256, 256, 256, 3)

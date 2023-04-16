@@ -20,7 +20,7 @@ img_num = int(input("Enter the racetrack number: "))
 my_image = pygame.image.load(f'image{img_num}.png')
 np_img = np.load(f"image{img_num}.npy")
 config = np.load(f"config{img_num}.npy", allow_pickle=True)
-env = racingEnv(np_img, my_image, config, allow=['forward','right','left','backward']) #set allow to 'all' if you want everything
+env = racingEnv(np_img, my_image, config, -1, -0.001, 3) #-2, -0.001, 1
 env = DummyVecEnv([lambda: env])
 model_number = int(input("Enter the model number: "))
 model_type = int(input("Enter model type. 1 for PPO, 2 for DQN: "))
@@ -30,7 +30,7 @@ if load_model.lower() == "y":
 	model_path = input("Enter relative model path: ")
 	weird_char =  [char for char in model_path if char not in "abcdefghijklmnopqrstuvwxyz1234567890_."][0]
 	try:
-		loaded_timesteps = int(model_path.split(weird_char)[1].split(".")[0])
+		loaded_timesteps = int(model_path.split(weird_char)[-1].split(".")[0])
 	except Exception as e:
 		print(e)
 		loaded_timesteps = int(input("Please enter the timesteps the loaded model was trained for."))

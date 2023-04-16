@@ -1,0 +1,5 @@
+Episode 3
+Total Reward = -0.5091706796416346
+Steps = 512
+Average Reward = -0.001
+Network Shape: (15, 256, 256, 256, 3)

@@ -1,0 +1,5 @@
+Episode 183
+Total Reward = 0.84
+Steps = 96
+Average Reward = 0.009
+Network Shape: (15, 256, 256, 256, 3)

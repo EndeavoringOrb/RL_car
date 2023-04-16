@@ -1,0 +1,5 @@
+Episode 34
+Total Reward = 7.749999999999999
+Steps = 151
+Average Reward = 0.051
+Network Shape: (15, 256, 256, 256, 3)
