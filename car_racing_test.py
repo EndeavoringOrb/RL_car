@@ -3,14 +3,19 @@ import math
 import numpy as np
 from stable_baselines3 import PPO, DQN
 from custom_env import racingEnv
+from time import sleep
+import tensorflow as tf
 
 # Initialize Pygame
 pygame.init()
 
 # Load the saved model from the file path
-model_path = "dqn_model26/1359872.zip"  # Replace with the file path to your saved model
+model_path = "models\custom_models\model_5.h5"  # Replace with the file path to your saved model
 img_num = 4
-model = DQN.load(model_path)
+if model_path[-3:] == "zip":
+    model = DQN.load(model_path)
+elif model_path[-2:] == "h5":
+    model = tf.keras.models.load_model(model_path)
 
 # Set physics things
 friction_constant = 0.987
@@ -62,7 +67,7 @@ score = 0
 def get_gate_centers(gates):
     centers = []
     for gate in gates:
-        centers.append((sum([point[0] for point in gate]), sum([point[1] for point in gate])))
+        centers.append((sum([point[0] for point in gate])/len(gate), sum([point[1] for point in gate])/len(gate)))
     return centers
 
 def deg_to_rad(angle):
@@ -216,8 +221,10 @@ gate_centers = get_gate_centers(gates_original)
 distances, points = find_distances(car_points[0][0],car_points[0][1],car_points[1][0],car_points[1][1],car_points[2][0],car_points[2][1],car_points[3][0],car_points[3][1],angle,np_img)
 gate_remove_list = []
 allow=['forward','right','left','backward']
+steps = 0
 while game_running:
     if game_over == True:
+        steps = 0
         gate_remove_list = []
         gates = gates_original
         score = 0
@@ -228,30 +235,39 @@ while game_running:
         car_y = config[0][1]*WINDOW_HEIGHT/og_size[1]
         car_points = [(config[0][0]-car_shape[0]/2,config[0][1]-car_shape[1]/2),(config[0][0]+car_shape[0]/2,config[0][1]-car_shape[1]/2),(config[0][0]-car_shape[0]/2,config[0][1]+car_shape[1]/2),(config[0][0]+car_shape[0]/2,config[0][1]+car_shape[1]/2)]
     velocity[0],velocity[1] = velocity[0]*friction_constant,velocity[1]*friction_constant
+    steps += 1
 
+    relevant_gates = [gate for i, gate in enumerate(gates) if i not in gate_remove_list]
+    gate_centers = get_gate_centers(relevant_gates)
 
     # find distance to closest gate
     center_distances = []
-    center_x = int((car_points[0,0] + car_points[1,0] + car_points[2,0] + car_points[3,0]) / 4)
-    center_y = int((car_points[0,1] + car_points[1,1] + car_points[2,1] + car_points[3,1]) / 4)
+    center_x = int((car_points[0][0] + car_points[1][0] + car_points[2][0] + car_points[3][0]) / 4)
+    center_y = int((car_points[0][1] + car_points[1][1] + car_points[2][1] + car_points[3][1]) / 4)
     for i, gate_center in enumerate(gate_centers):
         center_distances.append([i, ((center_x-gate_center[0])**2+(center_y-gate_center[1])**2)**0.5])
     closest_gate = min(center_distances, key=lambda x: x[1])
 
     center_x /= 1000
     center_y /= 1000
-    closest_gate = [closest_gate[1][0]/1000, closest_gate[1][1]/1000]
+    closest_gate = [gate_centers[closest_gate[0]][0]/1000, gate_centers[closest_gate[0]][1]/1000]
 
     normalized_distances = [distance/1414.2135623731 for distance in distances]
     normalize_velocity = lambda x: (x if abs(x) <= 4 else 4*(x/abs(x)))/2 - 1
     normalized_velocity = [normalize_velocity(velocity[0]),normalize_velocity(velocity[1])]
 
-    observation = np.array([*normalized_distances,normalized_velocity[0],normalized_velocity[1],math.sin(deg_to_rad(angle))])
+    observation = np.array([*normalized_distances, normalized_velocity[0], normalized_velocity[1], math.sin(deg_to_rad(angle)), center_x, center_y, closest_gate[0], closest_gate[1]])
     # Move the car
     # action : w,a,s,d,wa,wd,sa,sd
-    action, _ = model.predict(observation)
+    if model_path[-2:] == "h5":
+        obs = np.array([observation])
+        action = model.predict_on_batch(obs)
+    else:
+        action, _ = model.predict(observation)
     action_done = False
-    print(f" {action}",end = " ")
+    current_sum = sum(action[0])
+    print(f"{(velocity[0]**2+velocity[1]**2)**0.5:.4f} {action[0][0]/current_sum:.4f} {action[0][1]/current_sum:.4f} {action[0][2]/current_sum:.4f}",end = " ")
+    action = np.argmax(action[0])
     if action == 0: #forward
         print("forward ",end="\r")
         velocity[0] += CAR_SPEED * math.sin((angle/180)*math.pi)
@@ -263,15 +279,15 @@ while game_running:
         angle += TURN_SPEED
         car_points = rotate_points(car_points,-TURN_SPEED)
         action_done = True
-    elif action == 2: #back
-        print("backward",end="\r")
-        velocity[0] -= CAR_SPEED * math.sin((angle/180)*math.pi)
-        velocity[1] -= CAR_SPEED * math.cos((angle/180)*math.pi)
-        action_done = True
-    elif action == 3: #right
+    elif action == 2: #right
         print("right   ",end="\r")
         angle -= TURN_SPEED
         car_points = rotate_points(car_points,TURN_SPEED)
+        action_done = True
+    elif action == 3: #back
+        print("backward",end="\r")
+        velocity[0] -= CAR_SPEED * math.sin((angle/180)*math.pi)
+        velocity[1] -= CAR_SPEED * math.cos((angle/180)*math.pi)
         action_done = True
     elif action == 4 and (allow == 'all' or 'forward left' in allow): #forward left
         velocity[0] += CAR_SPEED * math.sin((angle/180)*math.pi)
@@ -351,7 +367,7 @@ while game_running:
         pygame.draw.circle(game_window, (255,0,0), (point), 5)
     
     # Draw the score
-    score_text = SCORE_FONT.render(f'Score: {score}', True, WHITE)
+    score_text = SCORE_FONT.render(f'Score: {score} - Steps: {steps}', True, WHITE)
     game_window.blit(score_text, (10, 10))
 
     # Draw lines
@@ -369,6 +385,8 @@ while game_running:
     pygame.draw.circle(game_window, (0,0,0), (car_points[2][0],car_points[2][1]), 5)
     pygame.draw.circle(game_window, (0,0,255), (car_points[3][0],car_points[3][1]), 5)
 
+    # draw closest gate
+    pygame.draw.circle(game_window, (0,0,255), (closest_gate[0]*1000,closest_gate[1]*1000), 7)
     # Update the score
     #score += 1
 
@@ -376,7 +394,7 @@ while game_running:
     pygame.display.update()
 
     # Set the frame rate
-    clock.tick(60)
+    clock.tick(24)
 
 # Quit Pygame
 pygame.quit()

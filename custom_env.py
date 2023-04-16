@@ -8,7 +8,7 @@ import threading
 pygame.init()
 
 class racingEnv(gym.Env):
-    def __init__(self, np_img, bg_img, config, allow='all'):
+    def __init__(self, np_img, bg_img, config, wall_reward, idle_reward, gate_reward, vel_reward, closeness_reward):
         super(racingEnv, self).__init__()
         # Define action and observation space
         # They must be gym.spaces objects
@@ -17,7 +17,7 @@ class racingEnv(gym.Env):
         #low = np.array([0.0] * 8 + [-float('inf'), -float('inf'), -1.0])
         #high = np.array([1000.0] * 8 + [float('inf'), float('inf'), 1.0])
         #self.action_space = spaces.Box(low=0, high=1, shape=(4,2), dtype=np.float32)
-        self.action_space = spaces.Discrete(4)
+        self.action_space = spaces.Discrete(3)
         # Example for using image as input (channel-first; channel-last also works):
         # Create the Box observation space
         self.observation_space = spaces.Box(low=-1.0, high=1.0, dtype=np.float64, shape=(15,))
@@ -41,12 +41,21 @@ class racingEnv(gym.Env):
         self.done = False
         self.gates_original = config[1:]
         self.gates = self.gates_original
-        self.velocity_reward_mult = 1
-        self.allow = allow
         self.vel = 0
         self.gate_remove_list = []
         self.gate_centers = self.get_gate_centers(self.gates_original)
 
+        self.zero_count = 0
+        self.step_num = 0
+        self.step_num2 = 0
+
+        self.wall_reward = wall_reward
+        self.idle_reward = idle_reward
+        self.gate_reward = gate_reward
+        self.velocity_reward = vel_reward
+        self.closeness_reward = closeness_reward
+
+        self.old_distance = 1500
 
         #self.my_image = bg_img
         #og_size = self.my_image.get_size()
@@ -265,44 +274,17 @@ class racingEnv(gym.Env):
             self.velocity[0] += self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] += self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
             action_done = True
-            #self.reward += 0.1
         elif action == 1: #left  and (self.allow == 'all' or 'left' in self.allow)
             self.angle += self.TURN_SPEED
             self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
             action_done = True
-        elif action == 2: #back  and (self.allow == 'all' or 'back' in self.allow)
+        elif action == 2: #right  and (self.allow == 'all' or 'right' in self.allow)
+            self.angle -= self.TURN_SPEED
+            self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
+            action_done = True
+        elif action == 3: #back  and (self.allow == 'all' or 'back' in self.allow)
             self.velocity[0] -= self.BACK_SPEED * math.sin((self.angle/180)*math.pi)
             self.velocity[1] -= self.BACK_SPEED * math.cos((self.angle/180)*math.pi)
-            action_done = True
-        elif action == 3: #right  and (self.allow == 'all' or 'right' in self.allow)
-            self.angle -= self.TURN_SPEED
-            self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
-            action_done = True
-        elif action == 4 and (self.allow == 'all' or 'forward left' in self.allow): #forward left
-            self.velocity[0] += self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
-            self.velocity[1] += self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
-            self.angle += self.TURN_SPEED
-            self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
-            #self.reward += 0.1
-            action_done = True
-        elif action == 5 and (self.allow == 'all' or 'forward right' in self.allow): #forward right
-            self.velocity[0] += self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
-            self.velocity[1] += self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
-            self.angle -= self.TURN_SPEED
-            self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
-            #self.reward += 0.1
-            action_done = True
-        elif action == 6 and (self.allow == 'all' or 'backward left' in self.allow): #backward left
-            self.velocity[0] -= self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
-            self.velocity[1] -= self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
-            self.angle += self.TURN_SPEED
-            self.car_points = self.rotate_points(self.car_points,-self.TURN_SPEED)
-            action_done = True
-        elif action == 7 and (self.allow == 'all' or 'backward right' in self.allow): #backward right
-            self.velocity[0] -= self.CAR_SPEED * math.sin((self.angle/180)*math.pi)
-            self.velocity[1] -= self.CAR_SPEED * math.cos((self.angle/180)*math.pi)
-            self.angle -= self.TURN_SPEED
-            self.car_points = self.rotate_points(self.car_points,self.TURN_SPEED)
             action_done = True
         
         if action_done == False:
@@ -338,37 +320,31 @@ class racingEnv(gym.Env):
         for line in [line1,line2,line3,line4]:
             for i, gate in enumerate(self.gates):
                 if self.are_lines_intersecting(line,(gate[0][0],gate[0][1],gate[-1][0],gate[-1][1])) and i not in self.gate_remove_list:
-                    self.reward += 1
+                    self.reward += self.gate_reward
                     #print("\ngate!\n")
                     self.gate_remove_list.append(i)
         #self.gates = np.delete(self.gates,self.gate_remove_list,axis=0)
 
-
-        # add reward for velocity. bigger speed means bigger reward
-        '''try:
-            prev_vel = self.vel
-            self.vel = (((self.velocity[0])**2+(self.velocity[1])**2)**0.5)
-            #print(vel)
-            self.reward += self.vel/4 if self.vel > prev_vel else 0
-        except ZeroDivisionError:
-            pass'''
-
         if self.np_img[int(self.car_points[0,1]),int(self.car_points[0,0])] == 0 or self.np_img[int(self.car_points[1,1]),int(self.car_points[1,0])] == 0 or self.np_img[int(self.car_points[2,1]),int(self.car_points[2,0])] == 0 or self.np_img[int(self.car_points[3,1]),int(self.car_points[3,0])] == 0:
-            self.reward = -3
+            self.reward = self.wall_reward
             self.done = True
             #self.reset()
 
+        relevant_gates = [gate for i, gate in enumerate(self.gates) if i not in self.gate_remove_list]
+        self.gate_centers = self.get_gate_centers(relevant_gates)
         # find distance to closest gate
         center_distances = []
-        center_x = int((self.car_points[0,0] + self.car_points[1,0] + self.car_points[2,0] + self.car_points[3,0]) / 4)
-        center_y = int((self.car_points[0,1] + self.car_points[1,1] + self.car_points[2,1] + self.car_points[3,1]) / 4)
+        center_x = int((self.car_points[0][0] + self.car_points[1][0] + self.car_points[2][0] + self.car_points[3][0]) / 4)
+        center_y = int((self.car_points[0][1] + self.car_points[1][1] + self.car_points[2][1] + self.car_points[3][1]) / 4)
         for i, gate_center in enumerate(self.gate_centers):
             center_distances.append([i, ((center_x-gate_center[0])**2+(center_y-gate_center[1])**2)**0.5])
         closest_gate = min(center_distances, key=lambda x: x[1])
 
-        center_x /= 1000
-        center_y /= 1000
-        closest_gate = [closest_gate[1][0]/1000, closest_gate[1][1]/1000]
+        center_x /= 500
+        center_x -= 1
+        center_y /= 500
+        center_y -= 1
+        closest_gate = [self.gate_centers[closest_gate[0]][0]/500-1, self.gate_centers[closest_gate[0]][1]/500-1]
 
 
         normalized_distances = [distance/1414.2135623731 for distance in distances]
@@ -379,53 +355,51 @@ class racingEnv(gym.Env):
 
         info = {}
 
-        '''
-        # Clear the screen
-        self.game_window.fill((255,255,255))
+        self.step_num += 1
+        self.step_num2 += 1
+        self.reward += self.idle_reward
 
-        # Draw the background
-        self.game_window.blit(self.my_image, (0,0))
+        new_vel = (self.velocity[0]**2+self.velocity[1]**2)**0.5
+        if new_vel > self.vel:
+            self.vel = new_vel
+            self.reward -= self.velocity_reward
+        elif new_vel < 0.01:
+            self.vel = new_vel
+            self.reward += self.velocity_reward
+        #else:
+        #    self.vel = new_vel
+        #    self.reward += self.velocity_reward
+        
+        if min(distances) < 18 and self.closeness_reward != 0:
+            thing = self.closeness_reward - self.closeness_reward*min(distances)/18
+            if thing >= self.closeness_reward:
+                thing = self.closeness_reward
+        else:
+            thing = 0
+        self.reward -= thing
+        print("closeness",thing)
 
-        # Draw car png
-        #game_window.blit(car_image2, (car_points[0][0], car_points[0][1]))
 
-        # Draw the sensors
-        distances, points = self.find_distances(self.car_points[0][0],self.car_points[0][1],self.car_points[1][0],self.car_points[1][1],self.car_points[2][0],self.car_points[2][1],self.car_points[3][0],self.car_points[3][1],self.angle,self.np_img)
-        for point in points:
-            pygame.draw.circle(self.game_window, (255,0,0), (point), 5)
+        center_x = int((self.car_points[0][0] + self.car_points[1][0] + self.car_points[2][0] + self.car_points[3][0]) / 4)
+        center_y = int((self.car_points[0][1] + self.car_points[1][1] + self.car_points[2][1] + self.car_points[3][1]) / 4)
+        const = 0.1
+        dist = ((closest_gate[0]-center_x)**2+(closest_gate[1]-center_y)**2)**0.5
+        thing = const/dist
+        thing = thing if thing < const else const
+        thing = thing if dist < self.old_distance else 0
+        self.reward += thing
+        self.old_distance = dist
+        print("gate dist",thing)
+        print(self.reward)
+        print(new_vel)
 
-        # Draw the score
-        self.score_text = self.SCORE_FONT.render(f'Score: {self.reward}', True, (255,255,255))
-        self.game_window.blit(self.score_text, (10, 10))
-
-        # Draw lines
-        for i, line in enumerate(self.config[1:]):
-            if i in gate_remove_list:
-                color = (255,0,0)
-            else:
-                color = (0,255,0)
-            for point in line:
-                pygame.draw.circle(self.game_window, color, point, 5)
-
-        # Draw car bounding
-        pygame.draw.circle(self.game_window, (0,255,0), (self.car_points[0][0],self.car_points[0][1]), 5)
-        pygame.draw.circle(self.game_window, (255,0,0), (self.car_points[1][0],self.car_points[1][1]), 5)
-        pygame.draw.circle(self.game_window, (0,0,0), (self.car_points[2][0],self.car_points[2][1]), 5)
-        pygame.draw.circle(self.game_window, (0,0,255), (self.car_points[3][0],self.car_points[3][1]), 5)
-
-        # Update the display
-        pygame.display.update()
-
-        self.clock.tick(60)
-        '''
-        #print(self.reward, end=" ")
         return observation, self.reward, self.done, info
 
     def on_keypress(self, event):
         self.stop_flag = True
 
     def reset(self):
-        #print(f"{self.reward:.5f}       ",end="\r")
+        self.step_num = 0
         self.done = False
         self.gate_remove_list = []
         self.config = self._config
@@ -438,15 +412,17 @@ class racingEnv(gym.Env):
         
         # find distance to closest gate
         center_distances = []
-        center_x = int((self.car_points[0,0] + self.car_points[1,0] + self.car_points[2,0] + self.car_points[3,0]) / 4)
-        center_y = int((self.car_points[0,1] + self.car_points[1,1] + self.car_points[2,1] + self.car_points[3,1]) / 4)
+        center_x = int((self.car_points[0][0] + self.car_points[1][0] + self.car_points[2][0] + self.car_points[3][0]) / 4)
+        center_y = int((self.car_points[0][1] + self.car_points[1][1] + self.car_points[2][1] + self.car_points[3][1]) / 4)
         for i, gate_center in enumerate(self.gate_centers):
             center_distances.append([i, ((center_x-gate_center[0])**2+(center_y-gate_center[1])**2)**0.5])
         closest_gate = min(center_distances, key=lambda x: x[1])
 
-        center_x /= 1000
-        center_y /= 1000
-        closest_gate = [closest_gate[1][0]/1000, closest_gate[1][1]/1000]
+        center_x /= 500
+        center_x -= 1
+        center_y /= 500
+        center_y -= 1
+        closest_gate = [self.gate_centers[closest_gate[0]][0]/500-1, self.gate_centers[closest_gate[0]][1]/500-1]
 
 
         normalized_distances = [distance/1414.2135623731 for distance in distances]
